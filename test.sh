@@ -11,6 +11,7 @@ RED_BG="\033[41;1m"
 echo "Configure testing environment... "
 
 echo "Creating files and directories used for the tests"
+rm -rf test_log
 mkdir in_files out_files test_log my_cmd
 touch in_files/in_blah out_files/out_blah
 touch in_files/in_noperm out_files/out_noperm
@@ -43,7 +44,12 @@ make -C .. > test_log/make_log 2> /dev/null
 compile=$(< test_log/make_log grep -c "Nothing to be done")
 [[ compile -ne 0 ]] && echo -e "${GREEN}OK${END}\t" || echo -e "${RED}KO\t${END}" 
 
+echo -ne "\nNorminette:\t"
+norminette .. > test_log/norm_log
+norm=$(<test_log/norm_log grep -c "Error")
+[[ $norm -eq 0 ]] && echo -e "${GREEN}OK${END}\t" || echo -e "${RED}KO\t${END}"
+[[ $norm -ne 0 ]] && cat /test_log/norm_log | grep -v "OK!"
 
 echo "Deleting all test files"
-rm -rf in_files out_files test_log my_cmd
+rm -rf in_files out_files my_cmd
 make fclean -C .. > /dev/null
