@@ -18,12 +18,13 @@ rm -rf in_files out_files my_cmd my_cmd2
 rm -f ../pipex
 
 echo "Creating files and directories used for the tests"
-mkdir in_files out_files test_log my_cmd my_cmd2
+mkdir in_files out_files out_noperm test_log my_cmd my_cmd2
 echo -ne "This is a basic test file\nblah blah blah\nblah blah\nblah" > in_files/in_ok
 cp in_files/in_ok in_files/in_noperm
 cp in_files/in_ok in_files/in_noread
 chmod 000 in_files/in_noperm
 chmod -r in_files/in_noread
+chmod 000 out_noperm
 touch out_files/out_noperm
 touch out_files/out_nowrite
 touch out_files/out_noperm_test
@@ -36,6 +37,11 @@ cp /bin/cat my_cmd/exe
 cp /bin/cat my_cmd/exe_noperm
 chmod -x my_cmd/exe_noperm
 cp /bin/ls my_cmd2/exe
+echo -e "#include <stdio.h> \n int main(void) { printf(\"Hey\"); return (0); }" > my_cmd/main.c
+cc my_cmd/main.c -o my_cmd/yo
+cc my_cmd/main.c -o my_cmd/yo_noperm
+chmod -x my_cmd/yo_noperm
+rm -f my_cmd/main.c
 
 echo "Testing pipex Makefile"
 echo -ne "Rules:\t\t"
@@ -69,11 +75,6 @@ norm=$(<test_log/norm_log grep -c "Error")
 [[ $norm -ne 0 ]] && cat test_log/norm_log | grep -v "OK!"
 
 [[ ${compile_name} -eq 1 ]] || exit
-
-echo -e "#include <stdio.h> \n int main(void) { printf(\"Hey\"); return (0); }" > my_cmd/main.c
-cc my_cmd/main.c -o my_cmd/yo
-cc my_cmd/main.c -o my_cmd/yo_noperm
-chmod -x my_cmd/yo_noperm
 
 echo -ne "\t\t\t\t\t\t\t\t\t\t\tRESULT\tEXIT\tLEAK\tFD"
 echo -e "\n\nBasic tests"
@@ -232,7 +233,7 @@ diff=$(diff out_files/out_ok out_files/out_ok_test | wc -l)
 [[ $open -eq 0 ]] && echo -e "${GREEN}OK${END}\t" || echo -e "${RED}KO${END}\t"
 [[ $leak -ne 0 ]] || [[ $open -ne 0 ]] && vg_ko_log+="Test${test_nb}: check test_log/valgrind_test${test_nb}_log for more valgrind error info\n"
 
-echo -e "\n\nNon existing files"
+echo -e "\n\nNon existing files/directories"
 
 test_nb=$(echo "$test_nb + 1" | bc)
 echo -ne "-> Test ${test_nb}:\t./pipex in_files/in_noexist \"cat\" \"cat\" out_files/out_ok\t\t"
@@ -263,6 +264,43 @@ leak_main=$(<test_log/valgrind_test${test_nb}_log grep  -m4 -A 1 "HEAP SUMMARY" 
 leak=$(echo "$leak_first + $leak_second + $leak_main" | bc)
 open=$(<test_log/valgrind_test${test_nb}_log grep -c "Open file descriptor")
 2>/dev/null < /bin/in_noexist cat | cat > out_files/out_ok_test 2>/dev/null
+codetest=$?
+diff=$(diff out_files/out_ok out_files/out_ok_test | wc -l)
+[[ $diff -eq 0 ]] && echo -ne "${GREEN}OK${END}\t" || echo -ne "${RED}KO${END}\t" && echo -e $diff > test_log/test_log
+[[ $codepipex -eq $codetest ]] && echo -ne "${GREEN}OK${END}\t" || echo -ne "${RED}KO${END}\t"
+[[ $codepipex -ne $codetest ]] && echo -e "User exit status=$codepipex - Test exit status=$codetest" > test_log/test_log
+[[ $leak -eq 0 ]] && echo -ne "${GREEN}OK${END}\t" || echo -ne "${RED}KO${END}\t"
+[[ $open -eq 0 ]] && echo -e "${GREEN}OK${END}\t" || echo -e "${RED}KO${END}\t"
+[[ $leak -ne 0 ]] || [[ $open -ne 0 ]] && vg_ko_log+="Test${test_nb}: check test_log/valgrind_test${test_nb}_log for more valgrind error info\n"
+
+test_nb=$(echo "$test_nb + 1" | bc)
+echo -ne "-> Test ${test_nb}:\t./pipex in_noexist/in_ok \"cat\" \"cat\" out_files/out_ok\t\t\t"
+$valgrind ../pipex in_noexist/in_ok "cat" "cat" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
+codepipex=$?
+leak_first=$(<test_log/valgrind_test${test_nb}_log grep -m1 -A 1 "HEAP SUMMARY" | tail -n1 | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
+leak_second=$(<test_log/valgrind_test${test_nb}_log grep  -m3 -A 1 "HEAP SUMMARY" | tail -n1 | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
+leak_main=$(<test_log/valgrind_test${test_nb}_log grep  -m4 -A 1 "HEAP SUMMARY" | tail -n1 | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
+leak=$(echo "$leak_first + $leak_second + $leak_main" | bc)
+open=$(<test_log/valgrind_test${test_nb}_log grep -c "Open file descriptor")
+2>/dev/null < in_noexist/in_ok cat | cat > out_files/out_ok_test 2>/dev/null
+codetest=$?
+diff=$(diff out_files/out_ok out_files/out_ok_test | wc -l)
+[[ $diff -eq 0 ]] && echo -ne "${GREEN}OK${END}\t" || echo -ne "${RED}KO${END}\t" && echo -e $diff > test_log/test_log
+[[ $codepipex -eq $codetest ]] && echo -ne "${GREEN}OK${END}\t" || echo -ne "${RED}KO${END}\t"
+[[ $codepipex -ne $codetest ]] && echo -e "User exit status=$codepipex - Test exit status=$codetest" > test_log/test_log
+[[ $leak -eq 0 ]] && echo -ne "${GREEN}OK${END}\t" || echo -ne "${RED}KO${END}\t"
+[[ $open -eq 0 ]] && echo -e "${GREEN}OK${END}\t" || echo -e "${RED}KO${END}\t"
+[[ $leak -ne 0 ]] || [[ $open -ne 0 ]] && vg_ko_log+="Test${test_nb}: check test_log/valgrind_test${test_nb}_log for more valgrind error info\n"
+
+test_nb=$(echo "$test_nb + 1" | bc)
+echo -ne "-> Test ${test_nb}:\t./pipex in_files/in_ok \"cat\" \"cat\" out_noexist/out_ok\t\t\t"
+$valgrind ../pipex in_files/in_ok "cat" "cat" out_noexist/out_ok 2> test_log/valgrind_test${test_nb}_log
+codepipex=$?
+leak_first=$(<test_log/valgrind_test${test_nb}_log grep -m1 -A 1 "HEAP SUMMARY" | tail -n1 | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
+leak_main=$(<test_log/valgrind_test${test_nb}_log grep  -m3 -A 1 "HEAP SUMMARY" | tail -n1 | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
+leak=$(echo "$leak_main" | bc)
+open=$(<test_log/valgrind_test${test_nb}_log grep -c "Open file descriptor")
+2>/dev/null < in_files/in_ok cat | 2>/dev/null cat > out_noexist/out_ok_test 2>/dev/null
 codetest=$?
 diff=$(diff out_files/out_ok out_files/out_ok_test | wc -l)
 [[ $diff -eq 0 ]] && echo -ne "${GREEN}OK${END}\t" || echo -ne "${RED}KO${END}\t" && echo -e $diff > test_log/test_log
@@ -495,6 +533,24 @@ leak_main=$(<test_log/valgrind_test${test_nb}_log grep  -m3 -A 1 "HEAP SUMMARY" 
 leak=$(echo "$leak_main" | bc)
 open=$(<test_log/valgrind_test${test_nb}_log grep -c "Open file descriptor")
 2>/dev/null < in_files/in_ok cat | 2>/dev/null cat > out_files/out_noperm_test 2>/dev/null
+codetest=$?
+diff=$(diff out_files/out_ok out_files/out_ok_test | wc -l)
+[[ $diff -eq 0 ]] && echo -ne "${GREEN}OK${END}\t" || echo -ne "${RED}KO${END}\t" && echo -e $diff > test_log/test_log
+[[ $codepipex -eq $codetest ]] && echo -ne "${GREEN}OK${END}\t" || echo -ne "${RED}KO${END}\t"
+[[ $codepipex -ne $codetest ]] && echo -e "User exit status=$codepipex - Test exit status=$codetest" > test_log/test_log
+[[ $leak -eq 0 ]] && echo -ne "${GREEN}OK${END}\t" || echo -ne "${RED}KO${END}\t"
+[[ $open -eq 0 ]] && echo -e "${GREEN}OK${END}\t" || echo -e "${RED}KO${END}\t"
+[[ $leak -ne 0 ]] || [[ $open -ne 0 ]] && vg_ko_log+="Test${test_nb}: check test_log/valgrind_test${test_nb}_log for more valgrind error info\n"
+
+test_nb=$(echo "$test_nb + 1" | bc)
+echo -ne "-> Test ${test_nb}:\t./pipex in_files/in_ok \"cat\" \"cat\" out_noperm/out_ok\t\t\t"
+$valgrind ../pipex in_files/in_ok "cat" "cat" out_noperm/out_ok 2> test_log/valgrind_test${test_nb}_log
+codepipex=$?
+leak_first=$(<test_log/valgrind_test${test_nb}_log grep -m1 -A 1 "HEAP SUMMARY" | tail -n1 | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
+leak_main=$(<test_log/valgrind_test${test_nb}_log grep  -m3 -A 1 "HEAP SUMMARY" | tail -n1 | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
+leak=$(echo "$leak_main" | bc)
+open=$(<test_log/valgrind_test${test_nb}_log grep -c "Open file descriptor")
+2>/dev/null < in_files/in_ok cat | 2>/dev/null cat > out_noperm/out_ok_test 2>/dev/null
 codetest=$?
 diff=$(diff out_files/out_ok out_files/out_ok_test | wc -l)
 [[ $diff -eq 0 ]] && echo -ne "${GREEN}OK${END}\t" || echo -ne "${RED}KO${END}\t" && echo -e $diff > test_log/test_log
