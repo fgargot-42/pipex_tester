@@ -74,7 +74,7 @@ echo -ne "\nNorminette:\t"
 norminette .. > test_log/norm_log
 norm=$(<test_log/norm_log grep -c "Error")
 [[ $norm -eq 0 ]] && echo -e "${GREEN}OK${END}\t" || echo -e "${RED}KO${END}\t"
-[[ $norm -ne 0 ]] && cat test_log/norm_log | grep -v "OK!"
+[[ $norm -ne 0 ]] && cat test_log/norm_log | egrep -v "OK!"
 
 [[ ${compile_name} -eq 1 ]] || exit
 
@@ -85,9 +85,11 @@ test_nb=$(echo "$test_nb + 1" | bc)
 echo -ne "-> Test ${test_nb}:\t./pipex in_files/in_ok ls ls out_files/out_ok\t\t\t\t\t"
 $valgrind ../pipex in_files/in_ok "ls" "ls" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
-leak_first=$(<test_log/valgrind_test${test_nb}_log grep -m1 -A 1 "HEAP SUMMARY" | tail -n1 | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
-leak_second=$(<test_log/valgrind_test${test_nb}_log grep  -m3 -A 1 "HEAP SUMMARY" | tail -n1 | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
-leak_main=$(<test_log/valgrind_test${test_nb}_log grep  -m4 -A 1 "HEAP SUMMARY" | tail -n1 | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
+cmd_1_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "/usr/bin/ls" | cut -d' ' -f 1)
+cmd_2_id=$(<test_log/valgrind_test${test_nb}_log grep -m2 "/usr/bin/ls" | cut -d' ' -f 1)
+leak_first=$(<test_log/valgrind_test${test_nb}_log grep "$cmd_1_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
+leak_second=$(<test_log/valgrind_test${test_nb}_log grep "$cmd_2_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
+leak_main=$(<test_log/valgrind_test${test_nb}_log egrep -v "$cmd_1_id|$cmd_2_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g" | sed "{:q;N;s/\n/\+/g;t q}")
 leak=$(echo "$leak_main" | bc)
 open=$(<test_log/valgrind_test${test_nb}_log grep -c " file descriptor")
 err_nofile=$(< test_log/valgrind_test${test_nb}_log grep -ci "no such file or directory")
@@ -109,10 +111,12 @@ test_nb=$(echo "$test_nb + 1" | bc)
 echo -ne "-> Test ${test_nb}:\t./pipex in_files/in_ok cat cat out_files/out_ok\t\t\t\t\t"
 $valgrind ../pipex in_files/in_ok "cat" "cat" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
-leak_first=$(<test_log/valgrind_test${test_nb}_log grep -m1 -A 1 "HEAP SUMMARY" | tail -n1 | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
-leak_second=$(<test_log/valgrind_test${test_nb}_log grep  -m3 -A 1 "HEAP SUMMARY" | tail -n1 | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
-leak_main=$(<test_log/valgrind_test${test_nb}_log grep  -m4 -A 1 "HEAP SUMMARY" | tail -n1 | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
-leak=$(echo "$leak_first + $leak_second + $leak_main" | bc)
+cmd_1_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "/usr/bin/cat" | cut -d' ' -f 1)
+cmd_2_id=$(<test_log/valgrind_test${test_nb}_log grep -m2 "/usr/bin/cat" | tail -1 | cut -d' ' -f 1)
+leak_first=$(<test_log/valgrind_test${test_nb}_log grep "$cmd_1_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
+leak_second=$(<test_log/valgrind_test${test_nb}_log grep "$cmd_2_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
+leak_main=$(<test_log/valgrind_test${test_nb}_log egrep -v "$cmd_1_id|$cmd_2_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g" | sed "{:q;N;s/\n/\+/g;t q}")
+leak=$(echo "$leak_main + $leak_first + $leak_second" | bc)
 open=$(<test_log/valgrind_test${test_nb}_log grep -c " file descriptor")
 err_nofile=$(< test_log/valgrind_test${test_nb}_log grep -ci "no such file or directory")
 err_noperm=$(< test_log/valgrind_test${test_nb}_log grep -ci "permission denied")
@@ -133,10 +137,12 @@ test_nb=$(echo "$test_nb + 1" | bc)
 echo -ne "-> Test ${test_nb}:\t./pipex in_files/in_ok \"cat\" \"ls -l\" out_files/out_ok\t\t\t\t"
 $valgrind ../pipex in_files/in_ok "cat" "ls -l" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
-leak_first=$(<test_log/valgrind_test${test_nb}_log grep -m1 -A 1 "HEAP SUMMARY" | tail -n1 | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
-leak_second=$(<test_log/valgrind_test${test_nb}_log grep  -m3 -A 1 "HEAP SUMMARY" | tail -n1 | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
-leak_main=$(<test_log/valgrind_test${test_nb}_log grep  -m4 -A 1 "HEAP SUMMARY" | tail -n1 | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
-leak=$(echo "$leak_first + $leak_main" | bc)
+cmd_1_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "/usr/bin/cat" | cut -d' ' -f 1)
+cmd_2_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "/usr/bin/ls -l" | cut -d' ' -f 1)
+leak_first=$(<test_log/valgrind_test${test_nb}_log grep "$cmd_1_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
+leak_second=$(<test_log/valgrind_test${test_nb}_log grep "$cmd_2_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
+leak_main=$(<test_log/valgrind_test${test_nb}_log egrep -v "$cmd_1_id|$cmd_2_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g" | sed "{:q;N;s/\n/\+/g;t q}")
+leak=$(echo "$leak_main+$leak_first" | bc)
 open=$(<test_log/valgrind_test${test_nb}_log grep -c " file descriptor")
 err_nofile=$(< test_log/valgrind_test${test_nb}_log grep -ci "no such file or directory")
 err_noperm=$(< test_log/valgrind_test${test_nb}_log grep -ci "permission denied")
@@ -157,9 +163,11 @@ test_nb=$(echo "$test_nb + 1" | bc)
 echo -ne "-> Test ${test_nb}:\t./pipex in_files/in_ok \"ls -l\" \"grep test\" out_files/out_ok\t\t\t"
 $valgrind ../pipex in_files/in_ok "ls -l" "grep test" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
-leak_first=$(<test_log/valgrind_test${test_nb}_log grep -m1 -A 1 "HEAP SUMMARY" | tail -n1 | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
-leak_second=$(<test_log/valgrind_test${test_nb}_log grep  -m3 -A 1 "HEAP SUMMARY" | tail -n1 | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
-leak_main=$(<test_log/valgrind_test${test_nb}_log grep  -m4 -A 1 "HEAP SUMMARY" | tail -n1 | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
+cmd_1_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "/usr/bin/ls -l" | cut -d' ' -f 1)
+cmd_2_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "/usr/bin/grep" | cut -d' ' -f 1)
+leak_first=$(<test_log/valgrind_test${test_nb}_log grep "$cmd_1_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
+leak_second=$(<test_log/valgrind_test${test_nb}_log grep "$cmd_2_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
+leak_main=$(<test_log/valgrind_test${test_nb}_log egrep -v "$cmd_1_id|$cmd_2_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g" | sed "{:q;N;s/\n/\+/g;t q}")
 leak=$(echo "$leak_main" | bc)
 open=$(<test_log/valgrind_test${test_nb}_log grep -c " file descriptor")
 err_nofile=$(< test_log/valgrind_test${test_nb}_log grep -ci "no such file or directory")
@@ -181,10 +189,12 @@ test_nb=$(echo "$test_nb + 1" | bc)
 echo -ne "-> Test ${test_nb}:\t./pipex in_files/in_ok \"cat -e\" \"head -3\" out_files/out_ok\t\t\t"
 $valgrind ../pipex in_files/in_ok "cat -e" "head -3" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
-leak_first=$(<test_log/valgrind_test${test_nb}_log grep -m1 -A 1 "HEAP SUMMARY" | tail -n1 | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
-leak_second=$(<test_log/valgrind_test${test_nb}_log grep  -m3 -A 1 "HEAP SUMMARY" | tail -n1 | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
-leak_main=$(<test_log/valgrind_test${test_nb}_log grep  -m4 -A 1 "HEAP SUMMARY" | tail -n1 | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
-leak=$(echo "$leak_first + $leak_second + $leak_main" | bc)
+cmd_1_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "/usr/bin/cat" | cut -d' ' -f 1)
+cmd_2_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "/usr/bin/head" | cut -d' ' -f 1)
+leak_first=$(<test_log/valgrind_test${test_nb}_log grep "$cmd_1_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
+leak_second=$(<test_log/valgrind_test${test_nb}_log grep "$cmd_2_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
+leak_main=$(<test_log/valgrind_test${test_nb}_log egrep -v "$cmd_1_id|$cmd_2_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g" | sed "{:q;N;s/\n/\+/g;t q}")
+leak=$(echo "$leak_main+$leak_first+$leak_second" | bc)
 open=$(<test_log/valgrind_test${test_nb}_log grep -c " file descriptor")
 err_nofile=$(< test_log/valgrind_test${test_nb}_log grep -ci "no such file or directory")
 err_noperm=$(< test_log/valgrind_test${test_nb}_log grep -ci "permission denied")
@@ -208,10 +218,10 @@ test_nb=$(echo "$test_nb + 1" | bc)
 echo -ne "-> Test ${test_nb}:\t./pipex \"\" \"cat -e\" \"head -3\" out_files/out_ok\t\t\t\t\t"
 $valgrind ../pipex "" "cat -e" "head -3" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
-leak_first=$(<test_log/valgrind_test${test_nb}_log grep -m1 -A 1 "HEAP SUMMARY" | tail -n1 | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
-leak_second=$(<test_log/valgrind_test${test_nb}_log grep  -m3 -A 1 "HEAP SUMMARY" | tail -n1 | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
-leak_main=$(<test_log/valgrind_test${test_nb}_log grep  -m4 -A 1 "HEAP SUMMARY" | tail -n1 | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
-leak=$(echo "$leak_first + $leak_second + $leak_main" | bc)
+cmd_2_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "/usr/bin/head" | cut -d' ' -f 1)
+leak_second=$(<test_log/valgrind_test${test_nb}_log grep "$cmd_2_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
+leak_main=$(<test_log/valgrind_test${test_nb}_log egrep -v "$cmd_2_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g" | sed "{:q;N;s/\n/\+/g;t q}")
+leak=$(echo "$leak_main+$leak_second" | bc)
 open=$(<test_log/valgrind_test${test_nb}_log grep -c " file descriptor")
 err_nofile=$(< test_log/valgrind_test${test_nb}_log grep -ci "no such file or directory")
 2>/dev/null < "" cat -e | head -3 > out_files/out_ok_test
@@ -229,10 +239,10 @@ test_nb=$(echo "$test_nb + 1" | bc)
 echo -ne "-> Test ${test_nb}:\t./pipex in_files/in_ok \"cat -e\" \"head -3\" \"\"\t\t\t\t\t"
 $valgrind ../pipex in_files/in_ok "cat -e" "head -3" "" 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
-leak_first=$(<test_log/valgrind_test${test_nb}_log grep -m1 -A 1 "HEAP SUMMARY" | tail -n1 | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
-leak_second=$(<test_log/valgrind_test${test_nb}_log grep  -m3 -A 1 "HEAP SUMMARY" | tail -n1 | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
-leak_main=$(<test_log/valgrind_test${test_nb}_log grep  -m4 -A 1 "HEAP SUMMARY" | tail -n1 | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
-leak=$(echo "$leak_first + $leak_second + $leak_main" | bc)
+cmd_1_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "/usr/bin/cat" | cut -d' ' -f 1)
+leak_first=$(<test_log/valgrind_test${test_nb}_log grep "$cmd_1_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
+leak_main=$(<test_log/valgrind_test${test_nb}_log egrep -v "$cmd_1_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g" | sed "{:q;N;s/\n/\+/g;t q}")
+leak=$(echo "$leak_main" | bc)
 open=$(<test_log/valgrind_test${test_nb}_log grep -c " file descriptor")
 err_nofile=$(< test_log/valgrind_test${test_nb}_log grep -ci "no such file or directory")
 < in_files/in_ok cat -e | 2>/dev/null head -3 > ""
@@ -251,10 +261,8 @@ test_nb=$(echo "$test_nb + 1" | bc)
 echo -ne "-> Test ${test_nb}:\t./pipex in_files/in_ok \"\" \"head -3\" out_files/out_ok\t\t\t\t"
 $valgrind ../pipex in_files/in_ok "" "head -3" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
-leak_first=$(<test_log/valgrind_test${test_nb}_log grep -m1 -A 1 "HEAP SUMMARY" | tail -n1 | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
-leak_second=$(<test_log/valgrind_test${test_nb}_log grep  -m3 -A 1 "HEAP SUMMARY" | tail -n1 | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
-leak_main=$(<test_log/valgrind_test${test_nb}_log grep  -m4 -A 1 "HEAP SUMMARY" | tail -n1 | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
-leak=$(echo "$leak_first + $leak_second + $leak_main" | bc)
+leak_main=$(<test_log/valgrind_test${test_nb}_log grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g" | sed "{:q;N;s/\n/\+/g;t q}")
+leak=$(echo "$leak_main+$leak_first+$leak_second" | bc)
 open=$(<test_log/valgrind_test${test_nb}_log grep -c " file descriptor")
 err_noperm=$(< test_log/valgrind_test${test_nb}_log grep -ci "permission denied")
 2>/dev/null < in_files/in_ok "" | head -3 > out_files/out_ok_test
@@ -272,10 +280,10 @@ test_nb=$(echo "$test_nb + 1" | bc)
 echo -ne "-> Test ${test_nb}:\t./pipex in_files/in_ok \"cat -e\" \"\" out_files/out_ok\t\t\t\t"
 $valgrind ../pipex in_files/in_ok "cat -e" "" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
-leak_first=$(<test_log/valgrind_test${test_nb}_log grep -m1 -A 1 "HEAP SUMMARY" | tail -n1 | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
-leak_second=$(<test_log/valgrind_test${test_nb}_log grep  -m3 -A 1 "HEAP SUMMARY" | tail -n1 | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
-leak_main=$(<test_log/valgrind_test${test_nb}_log grep  -m4 -A 1 "HEAP SUMMARY" | tail -n1 | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
-leak=$(echo "$leak_first + $leak_second + $leak_main" | bc)
+cmd_1_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "/usr/bin/cat" | cut -d' ' -f 1)
+leak_first=$(<test_log/valgrind_test${test_nb}_log grep "$cmd_1_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
+leak_main=$(<test_log/valgrind_test${test_nb}_log egrep -v "$cmd_1_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g" | sed "{:q;N;s/\n/\+/g;t q}")
+leak=$(echo "$leak_main" | bc)
 open=$(<test_log/valgrind_test${test_nb}_log grep -c " file descriptor")
 err_noperm=$(< test_log/valgrind_test${test_nb}_log grep -ci "permission denied")
 < in_files/in_ok cat -e | 2>/dev/null "" > out_files/out_ok_test
@@ -293,10 +301,10 @@ test_nb=$(echo "$test_nb + 1" | bc)
 echo -ne "-> Test ${test_nb}:\t./pipex in_files/in_ok \" \" \"head -3\" out_files/out_ok\t\t\t\t"
 $valgrind ../pipex in_files/in_ok " " "head -3" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
-leak_first=$(<test_log/valgrind_test${test_nb}_log grep -m1 -A 1 "HEAP SUMMARY" | tail -n1 | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
-leak_second=$(<test_log/valgrind_test${test_nb}_log grep  -m3 -A 1 "HEAP SUMMARY" | tail -n1 | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
-leak_main=$(<test_log/valgrind_test${test_nb}_log grep  -m4 -A 1 "HEAP SUMMARY" | tail -n1 | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
-leak=$(echo "$leak_first + $leak_second + $leak_main" | bc)
+cmd_2_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "/usr/bin/head" | cut -d' ' -f 1)
+leak_second=$(<test_log/valgrind_test${test_nb}_log grep "$cmd_2_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
+leak_main=$(<test_log/valgrind_test${test_nb}_log egrep -v "$cmd_2_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g" | sed "{:q;N;s/\n/\+/g;t q}")
+leak=$(echo "$leak_main" | bc)
 open=$(<test_log/valgrind_test${test_nb}_log grep -c " file descriptor")
 err_nocmd=$(< test_log/valgrind_test${test_nb}_log grep -ci "command not found")
 2>/dev/null < in_files/in_ok " " | head -3 > out_files/out_ok_test
@@ -314,10 +322,10 @@ test_nb=$(echo "$test_nb + 1" | bc)
 echo -ne "-> Test ${test_nb}:\t./pipex in_files/in_ok \"cat -e\" \" \" out_files/out_ok\t\t\t\t"
 $valgrind ../pipex in_files/in_ok "cat -e" " " out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
-leak_first=$(<test_log/valgrind_test${test_nb}_log grep -m1 -A 1 "HEAP SUMMARY" | tail -n1 | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
-leak_second=$(<test_log/valgrind_test${test_nb}_log grep  -m3 -A 1 "HEAP SUMMARY" | tail -n1 | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
-leak_main=$(<test_log/valgrind_test${test_nb}_log grep  -m4 -A 1 "HEAP SUMMARY" | tail -n1 | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
-leak=$(echo "$leak_first + $leak_second + $leak_main" | bc)
+cmd_1_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "/usr/bin/cat" | cut -d' ' -f 1)
+leak_first=$(<test_log/valgrind_test${test_nb}_log grep "$cmd_1_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
+leak_main=$(<test_log/valgrind_test${test_nb}_log egrep -v "$cmd_1_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g" | sed "{:q;N;s/\n/\+/g;t q}")
+leak=$(echo "$leak_main" | bc)
 open=$(<test_log/valgrind_test${test_nb}_log grep -c " file descriptor")
 err_nocmd=$(< test_log/valgrind_test${test_nb}_log grep -ci "command not found")
 < in_files/in_ok cat -e | 2>/dev/null " " > out_files/out_ok_test
@@ -338,10 +346,12 @@ test_nb=$(echo "$test_nb + 1" | bc)
 echo -ne "-> Test ${test_nb}:\t./pipex in_files/in_ok \"/bin/cat -e\" \"ls\" out_files/out_ok\t\t\t"
 $valgrind ../pipex in_files/in_ok "/bin/cat -e" "ls" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
-leak_first=$(<test_log/valgrind_test${test_nb}_log grep -m1 -A 1 "HEAP SUMMARY" | tail -n1 | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
-leak_second=$(<test_log/valgrind_test${test_nb}_log grep  -m3 -A 1 "HEAP SUMMARY" | tail -n1 | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
-leak_main=$(<test_log/valgrind_test${test_nb}_log grep  -m4 -A 1 "HEAP SUMMARY" | tail -n1 | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
-leak=$(echo "$leak_first + $leak_main" | bc)
+cmd_1_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "/bin/cat" | cut -d' ' -f 1)
+cmd_2_id=$(<test_log/valgrind_test${test_nb}_log grep -m2 "/usr/bin/ls" | cut -d' ' -f 1)
+leak_first=$(<test_log/valgrind_test${test_nb}_log grep "$cmd_1_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
+leak_second=$(<test_log/valgrind_test${test_nb}_log grep "$cmd_2_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
+leak_main=$(<test_log/valgrind_test${test_nb}_log egrep -v "$cmd_1_id|$cmd_2_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g" | sed "{:q;N;s/\n/\+/g;t q}")
+leak=$(echo "$leak_main+$leak_first" | bc)
 open=$(<test_log/valgrind_test${test_nb}_log grep -c " file descriptor")
 err_nofile=$(< test_log/valgrind_test${test_nb}_log grep -ci "no such file or directory")
 err_noperm=$(< test_log/valgrind_test${test_nb}_log grep -ci "permission denied")
@@ -362,10 +372,12 @@ test_nb=$(echo "$test_nb + 1" | bc)
 echo -ne "-> Test ${test_nb}:\t./pipex in_files/in_ok \"cat -e\" \"/bin/ls\" out_files/out_ok\t\t\t"
 $valgrind ../pipex in_files/in_ok "cat -e" "/bin/ls" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
-leak_first=$(<test_log/valgrind_test${test_nb}_log grep -m1 -A 1 "HEAP SUMMARY" | tail -n1 | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
-leak_second=$(<test_log/valgrind_test${test_nb}_log grep  -m3 -A 1 "HEAP SUMMARY" | tail -n1 | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
-leak_main=$(<test_log/valgrind_test${test_nb}_log grep  -m4 -A 1 "HEAP SUMMARY" | tail -n1 | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
-leak=$(echo "$leak_first + $leak_main" | bc)
+cmd_1_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "/usr/bin/cat" | cut -d' ' -f 1)
+cmd_2_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "/bin/ls" | cut -d' ' -f 1)
+leak_first=$(<test_log/valgrind_test${test_nb}_log grep "$cmd_1_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
+leak_second=$(<test_log/valgrind_test${test_nb}_log grep "$cmd_2_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
+leak_main=$(<test_log/valgrind_test${test_nb}_log egrep -v "$cmd_1_id|$cmd_2_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g" | sed "{:q;N;s/\n/\+/g;t q}")
+leak=$(echo "$leak_main+$leak_first" | bc)
 open=$(<test_log/valgrind_test${test_nb}_log grep -c " file descriptor")
 err_nofile=$(< test_log/valgrind_test${test_nb}_log grep -ci "no such file or directory")
 err_noperm=$(< test_log/valgrind_test${test_nb}_log grep -ci "permission denied")
@@ -707,7 +719,7 @@ codepipex=$?
 leak_first=$(<test_log/valgrind_test${test_nb}_log grep -m1 -A 1 "HEAP SUMMARY" | tail -n1 | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
 leak_second=$(<test_log/valgrind_test${test_nb}_log grep  -m3 -A 1 "HEAP SUMMARY" | tail -n1 | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
 leak_main=$(<test_log/valgrind_test${test_nb}_log grep  -m4 -A 1 "HEAP SUMMARY" | tail -n1 | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
-leak=$(echo "$leak_first + $leak_second + $leak_main" | bc)
+leak=$(echo "$leak_first + $leak_main" | bc)
 open=$(<test_log/valgrind_test${test_nb}_log grep -c " file descriptor")
 #err=$(< test_log/valgrind_test${test_nb}_log grep -ci "not found")
 err=1
