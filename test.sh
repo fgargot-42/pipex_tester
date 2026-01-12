@@ -1331,6 +1331,35 @@ diff=$(diff out_files/out_ok out_files/out_ok_test)
 [[ $open -eq 0 ]] && echo -e "${GREEN}OK${END}\t" || echo -e "${RED}KO${END}\t"
 [[ $leak -ne 0 ]] || [[ $open -ne 0 ]] && vg_ko_log+="Test${test_nb}: check test_log/valgrind_test${test_nb}_log for more info\n"
 
+test_nb=$(echo "$test_nb + 1" | bc)
+echo -ne "-> Test ${test_nb}:\t./pipex in_files/in_ok \"cat\" \"cut -d'a' -f1\" out_files/out_ok\t\t\t"
+$valgrind $pipex_dir/pipex in_files/in_ok "cat" "cut -d'a' -f1" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
+codepipex=$?
+cmd_1_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/cat" | cut -d' ' -f 1)
+cmd_2_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/cut" | cut -d' ' -f 1)
+leak_first=$(<test_log/valgrind_test${test_nb}_log grep "$cmd_1_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
+leak_second=$(<test_log/valgrind_test${test_nb}_log grep "$cmd_2_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
+leak_main=$(<test_log/valgrind_test${test_nb}_log egrep -v "$cmd_1_id|$cmd_2_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g" | sed "{:q;N;s/\n/\+/g;t q}")
+leak=$(echo "$leak_main+$leak_first" | bc)
+open=$(<test_log/valgrind_test${test_nb}_log grep -c " file descriptor")
+err_nofile=$(< test_log/valgrind_test${test_nb}_log grep -oi "no such file or directory" | wc -l)
+err_noperm=$(< test_log/valgrind_test${test_nb}_log grep -oi "permission denied" | wc -l)
+err_nocmd=$(< test_log/valgrind_test${test_nb}_log grep -oi "command not found" | wc -l)
+err=$(echo "$err_nofile + $err_noperm + $err_nocmd" | bc)
+2>/dev/null < in_files/in_ok cat | cut -d'a' -f1 > out_files/out_ok_test 2>/dev/null
+codetest=$?
+diff=$(diff out_files/out_ok out_files/out_ok_test)
+[[ $(echo -ne $diff | wc -l) -ne 0 ]] && $diff_log+="\nTest{test_nb}:\n${diff}"
+[[ $(echo -ne $diff | wc -l) -eq 0 ]] && echo -ne "${GREEN}OK${END}\t" || echo -ne "${RED}KO${END}\t"
+[[ $codepipex -eq $codetest ]] && echo -ne "${GREEN}OK${END}\t" || echo -ne "${RED}KO${END}\t"
+[[ $codepipex -ne $codetest ]] && err_log+="Test${test_nb}: User exit status=$codepipex - Test exit status=$codetest\n"
+[[ $err -eq 0 ]]  && echo -ne "${GREEN}OK${END}\t" || echo -ne "${RED}KO${END}\t"
+[[ $err -ne 0 ]] && out_err_log+=$(echo -e "Test${test_nb}:") && out_err_log+=$(< test_log/valgrind_test${test_nb}_log egrep "(no such file or directory|permission denied|command not found)")
+[[ $leak -eq 0 ]] && echo -ne "${GREEN}OK${END}\t" || echo -ne "${RED}KO${END}\t"
+[[ $open -eq 0 ]] && echo -e "${GREEN}OK${END}\t" || echo -e "${RED}KO${END}\t"
+[[ $leak -ne 0 ]] || [[ $open -ne 0 ]] && vg_ko_log+="Test${test_nb}: check test_log/valgrind_test${test_nb}_log for more info\n"
+
+
 echo -e "\n${YEL}Out file errors:${END}\n$diff_log" && echo -ne $diff_log > test_log/diff_log
 echo -e "${YEL}Exit code errors:${END}\n$err_log" && echo -ne $err_log > test_log/test_log
 echo -e "${YEL}Error output errors:${END}\n$out_err_log" && echo -ne $out_err_log > test_log/test_out_log
