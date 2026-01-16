@@ -9,12 +9,16 @@ YEL_BG="\033[43;1m"
 RED_BG="\033[41;1m"
 
 pipex_dir=".."
+pipex_name="pipex"
+bonus_name="pipex_bonus"
 valgrind="valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes --trace-children=yes --track-fds=yes"
 vg_ko_log=""
 err_log=""
 diff_log=""
 out_err_log=""
 test_nb=0
+args=$1
+bonus=$([[ $(< $pipex_dir/Makefile grep -c ^bonus) -gt 0 ]] && [[ $(echo $args | egrep -c "\-.*b.*") -gt 0 ]] && echo 1 || echo 0)
 
 echo "Configure testing environment... "
 rm -rf test_log
@@ -68,11 +72,17 @@ make -C .. > /dev/null 2> test_log/make_log
 compile=$(< test_log/make_log grep -oi "Error" | wc -l)
 [[ compile -eq 0 ]] && echo -ne "${GREEN}OK${END}\t" || echo -ne "${RED}compile: KO\t${END}"
 compile_name=$(ls -l .. | egrep -c " pipex$")
-[[ compile_name -ne 0 ]] && echo -e "${GREEN}OK${END}\t" || echo -e "${RED}name: KO\t${END}"
+[[ compile_name -ne 0 ]] && echo -ne "${GREEN}OK${END}\t" || echo -ne "${RED}name: KO\t${END}"
+[[ $bonus -eq 1 ]] && make bonus -C .. > /dev/null 2> test_log/make_log
+[[ $bonus -eq 1 ]] && compile_bonus=$(< test_log/make_log grep -oi "Error" | wc -l)
+[[ $bonus -eq 1 ]] && [[ compile_bonus -eq 0 ]] && (echo -e "${GREEN}OK${END}\t" || echo -e "${RED}compile bonus: KO\t${END}") || echo -e
 echo -ne "Relink:\t\t"
 make -C .. > test_log/make_log 2> /dev/null
-compile=$(< test_log/make_log grep -c "Nothing to be done")
-[[ compile -ne 0 ]] && echo -e "${GREEN}OK${END}\t" || echo -e "${RED}KO\t${END}" 
+compile=$(< test_log/make_log egrep -c "Nothing to be done|up to date")
+[[ compile -ne 0 ]] && echo -ne "${GREEN}OK${END}\t" || echo -ne "${RED}KO\t${END}" 
+[[ $bonus -eq 1 ]] && make bonus -C .. > test_log/make_log 2> /dev/null
+[[ $bonus -eq 1 ]] && compile=$(< test_log/make_log egrep -c "Nothing to be done|up to date")
+[[ $bonus -eq 1 ]] && [[ compile -ne 0 ]] && (echo -e "${GREEN}OK${END}\t" || echo -e "${RED}bonus: KO\t${END}") || echo -e 
 
 echo -ne "\nNorminette:\t"
 norminette .. > test_log/norm_log
@@ -82,12 +92,12 @@ norm=$(<test_log/norm_log grep -c "Error")
 
 [[ ${compile_name} -eq 1 ]] || exit
 
-echo -ne "\t\t\t\t\t\t\t\t\t\t\t\tRESULT\tEXIT\tERROR\tLEAK\tFD"
+echo -ne "\n\t\t\t\t\t\t\t\t\t\t\t\tRESULT\tEXIT\tERROR\tLEAK\tFD"
 echo -e "\n\nBasic tests"
 
 test_nb=$(echo "$test_nb + 1" | bc)
-echo -ne "-> Test ${test_nb}:\t./pipex in_files/in_ok ls ls out_files/out_ok\t\t\t\t\t"
-$valgrind $pipex_dir/pipex in_files/in_ok "ls" "ls" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
+echo -ne "-> Test ${test_nb}:\t./${pipex_name} in_files/in_ok ls ls out_files/out_ok\t\t\t\t\t"
+$valgrind $pipex_dir/$pipex_name in_files/in_ok "ls" "ls" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
 cmd_1_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/ls" | cut -d' ' -f 1)
 cmd_2_id=$(<test_log/valgrind_test${test_nb}_log grep -m2 "Command: /usr/bin/ls" | cut -d' ' -f 1)
@@ -114,8 +124,8 @@ diff=$(diff out_files/out_ok out_files/out_ok_test)
 [[ $leak -ne 0 ]] || [[ $open -ne 0 ]] && vg_ko_log+="Test${test_nb}: check test_log/valgrind_test${test_nb}_log for more info\n"
 
 test_nb=$(echo "$test_nb + 1" | bc)
-echo -ne "-> Test ${test_nb}:\t./pipex in_files/in_ok cat cat out_files/out_ok\t\t\t\t\t"
-$valgrind $pipex_dir/pipex in_files/in_ok "cat" "cat" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
+echo -ne "-> Test ${test_nb}:\t./${pipex_name} in_files/in_ok cat cat out_files/out_ok\t\t\t\t\t"
+$valgrind $pipex_dir/$pipex_name in_files/in_ok "cat" "cat" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
 cmd_1_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/cat" | cut -d' ' -f 1)
 cmd_2_id=$(<test_log/valgrind_test${test_nb}_log grep -m2 "Command: /usr/bin/cat" | tail -1 | cut -d' ' -f 1)
@@ -142,11 +152,11 @@ diff=$(diff out_files/out_ok out_files/out_ok_test)
 [[ $leak -ne 0 ]] || [[ $open -ne 0 ]] && vg_ko_log+="Test${test_nb}: check test_log/valgrind_test${test_nb}_log for more info\n"
 
 test_nb=$(echo "$test_nb + 1" | bc)
-echo -ne "-> Test ${test_nb}:\t./pipex in_files/in_ok \"cat\" \"ls -l\" out_files/out_ok\t\t\t\t"
-$valgrind $pipex_dir/pipex in_files/in_ok "cat" "ls -l" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
+echo -ne "-> Test ${test_nb}:\t./${pipex_name} in_files/in_ok \"cat\" \"ls -l\" out_files/out_ok\t\t\t\t"
+$valgrind $pipex_dir/$pipex_name in_files/in_ok "cat" "ls -l" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
 cmd_1_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/cat" | cut -d' ' -f 1)
-cmd_2_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/ls -l" | cut -d' ' -f 1)
+cmd_2_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/ls" | cut -d' ' -f 1)
 leak_first=$(<test_log/valgrind_test${test_nb}_log grep "$cmd_1_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
 leak_second=$(<test_log/valgrind_test${test_nb}_log grep "$cmd_2_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
 leak_main=$(<test_log/valgrind_test${test_nb}_log egrep -v "$cmd_1_id|$cmd_2_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g" | sed "{:q;N;s/\n/\+/g;t q}")
@@ -170,10 +180,10 @@ diff=$(diff out_files/out_ok out_files/out_ok_test)
 [[ $leak -ne 0 ]] || [[ $open -ne 0 ]] && vg_ko_log+="Test${test_nb}: check test_log/valgrind_test${test_nb}_log for more info\n"
 
 test_nb=$(echo "$test_nb + 1" | bc)
-echo -ne "-> Test ${test_nb}:\t./pipex in_files/in_ok \"ls -l\" \"grep test\" out_files/out_ok\t\t\t"
-$valgrind $pipex_dir/pipex in_files/in_ok "ls -l" "grep test" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
+echo -ne "-> Test ${test_nb}:\t./${pipex_name} in_files/in_ok \"ls -l\" \"grep test\" out_files/out_ok\t\t\t"
+$valgrind $pipex_dir/$pipex_name in_files/in_ok "ls -l" "grep test" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
-cmd_1_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/ls -l" | cut -d' ' -f 1)
+cmd_1_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/ls" | cut -d' ' -f 1)
 cmd_2_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/grep" | cut -d' ' -f 1)
 leak_first=$(<test_log/valgrind_test${test_nb}_log grep "$cmd_1_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
 leak_second=$(<test_log/valgrind_test${test_nb}_log grep "$cmd_2_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
@@ -198,8 +208,8 @@ diff=$(diff out_files/out_ok out_files/out_ok_test)
 [[ $leak -ne 0 ]] || [[ $open -ne 0 ]] && vg_ko_log+="Test${test_nb}: check test_log/valgrind_test${test_nb}_log for more info\n"
 
 test_nb=$(echo "$test_nb + 1" | bc)
-echo -ne "-> Test ${test_nb}:\t./pipex in_files/in_ok \"cat -e\" \"head -3\" out_files/out_ok\t\t\t"
-$valgrind $pipex_dir/pipex in_files/in_ok "cat -e" "head -3" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
+echo -ne "-> Test ${test_nb}:\t./${pipex_name} in_files/in_ok \"cat -e\" \"head -3\" out_files/out_ok\t\t\t"
+$valgrind $pipex_dir/$pipex_name in_files/in_ok "cat -e" "head -3" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
 cmd_1_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/cat" | cut -d' ' -f 1)
 cmd_2_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/head" | cut -d' ' -f 1)
@@ -229,8 +239,8 @@ diff=$(diff out_files/out_ok out_files/out_ok_test)
 echo -e "\n\nEmpty args"
 
 test_nb=$(echo "$test_nb + 1" | bc)
-echo -ne "-> Test ${test_nb}:\t./pipex \"\" \"cat -e\" \"head -3\" out_files/out_ok\t\t\t\t\t"
-$valgrind $pipex_dir/pipex "" "cat -e" "head -3" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
+echo -ne "-> Test ${test_nb}:\t./${pipex_name} \"\" \"cat -e\" \"head -3\" out_files/out_ok\t\t\t\t\t"
+$valgrind $pipex_dir/$pipex_name "" "cat -e" "head -3" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
 cmd_2_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/head" | cut -d' ' -f 1)
 leak_second=$(<test_log/valgrind_test${test_nb}_log grep "$cmd_2_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
@@ -252,8 +262,8 @@ diff=$(diff out_files/out_ok out_files/out_ok_test)
 [[ $leak -ne 0 ]] || [[ $open -ne 0 ]] && vg_ko_log+="Test${test_nb}: check test_log/valgrind_test${test_nb}_log for more info\n"
 
 test_nb=$(echo "$test_nb + 1" | bc)
-echo -ne "-> Test ${test_nb}:\t./pipex in_files/in_ok \"cat -e\" \"head -3\" \"\"\t\t\t\t\t"
-$valgrind $pipex_dir/pipex in_files/in_ok "cat -e" "head -3" "" 2> test_log/valgrind_test${test_nb}_log
+echo -ne "-> Test ${test_nb}:\t./${pipex_name} in_files/in_ok \"cat -e\" \"head -3\" \"\"\t\t\t\t\t"
+$valgrind $pipex_dir/$pipex_name in_files/in_ok "cat -e" "head -3" "" 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
 cmd_1_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/cat" | cut -d' ' -f 1)
 leak_first=$(<test_log/valgrind_test${test_nb}_log grep "$cmd_1_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
@@ -276,8 +286,8 @@ diff=$(diff out_files/out_ok out_files/out_ok_test)
 
 
 test_nb=$(echo "$test_nb + 1" | bc)
-echo -ne "-> Test ${test_nb}:\t./pipex in_files/in_ok \"\" \"head -3\" out_files/out_ok\t\t\t\t"
-$valgrind $pipex_dir/pipex in_files/in_ok "" "head -3" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
+echo -ne "-> Test ${test_nb}:\t./${pipex_name} in_files/in_ok \"\" \"head -3\" out_files/out_ok\t\t\t\t"
+$valgrind $pipex_dir/$pipex_name in_files/in_ok "" "head -3" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
 leak_main=$(<test_log/valgrind_test${test_nb}_log grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g" | sed "{:q;N;s/\n/\+/g;t q}")
 leak=$(echo "$leak_main" | bc)
@@ -297,8 +307,8 @@ diff=$(diff out_files/out_ok out_files/out_ok_test)
 [[ $leak -ne 0 ]] || [[ $open -ne 0 ]] && vg_ko_log+="Test${test_nb}: check test_log/valgrind_test${test_nb}_log for more info\n"
 
 test_nb=$(echo "$test_nb + 1" | bc)
-echo -ne "-> Test ${test_nb}:\t./pipex in_files/in_ok \"cat -e\" \"\" out_files/out_ok\t\t\t\t"
-$valgrind $pipex_dir/pipex in_files/in_ok "cat -e" "" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
+echo -ne "-> Test ${test_nb}:\t./${pipex_name} in_files/in_ok \"cat -e\" \"\" out_files/out_ok\t\t\t\t"
+$valgrind $pipex_dir/$pipex_name in_files/in_ok "cat -e" "" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
 cmd_1_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/cat" | cut -d' ' -f 1)
 leak_first=$(<test_log/valgrind_test${test_nb}_log grep "$cmd_1_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
@@ -320,8 +330,8 @@ diff=$(diff out_files/out_ok out_files/out_ok_test)
 [[ $leak -ne 0 ]] || [[ $open -ne 0 ]] && vg_ko_log+="Test${test_nb}: check test_log/valgrind_test${test_nb}_log for more info\n"
 
 test_nb=$(echo "$test_nb + 1" | bc)
-echo -ne "-> Test ${test_nb}:\t./pipex in_files/in_ok \" \" \"head -3\" out_files/out_ok\t\t\t\t"
-$valgrind $pipex_dir/pipex in_files/in_ok " " "head -3" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
+echo -ne "-> Test ${test_nb}:\t./${pipex_name} in_files/in_ok \" \" \"head -3\" out_files/out_ok\t\t\t\t"
+$valgrind $pipex_dir/$pipex_name in_files/in_ok " " "head -3" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
 cmd_2_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/head" | cut -d' ' -f 1)
 leak_second=$(<test_log/valgrind_test${test_nb}_log grep "$cmd_2_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
@@ -343,8 +353,8 @@ diff=$(diff out_files/out_ok out_files/out_ok_test)
 [[ $leak -ne 0 ]] || [[ $open -ne 0 ]] && vg_ko_log+="Test${test_nb}: check test_log/valgrind_test${test_nb}_log for more info\n"
 
 test_nb=$(echo "$test_nb + 1" | bc)
-echo -ne "-> Test ${test_nb}:\t./pipex in_files/in_ok \"cat -e\" \" \" out_files/out_ok\t\t\t\t"
-$valgrind $pipex_dir/pipex in_files/in_ok "cat -e" " " out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
+echo -ne "-> Test ${test_nb}:\t./${pipex_name} in_files/in_ok \"cat -e\" \" \" out_files/out_ok\t\t\t\t"
+$valgrind $pipex_dir/$pipex_name in_files/in_ok "cat -e" " " out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
 cmd_1_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/cat" | cut -d' ' -f 1)
 leak_first=$(<test_log/valgrind_test${test_nb}_log grep "$cmd_1_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
@@ -369,8 +379,8 @@ diff=$(diff out_files/out_ok out_files/out_ok_test)
 echo -e "\n\nAbsolute paths"
 
 test_nb=$(echo "$test_nb + 1" | bc)
-echo -ne "-> Test ${test_nb}:\t./pipex in_files/in_ok \"/usr/bin/cat -e\" \"ls\" out_files/out_ok\t\t\t"
-$valgrind $pipex_dir/pipex in_files/in_ok "/usr/bin/cat -e" "ls" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
+echo -ne "-> Test ${test_nb}:\t./${pipex_name} in_files/in_ok \"/usr/bin/cat -e\" \"ls\" out_files/out_ok\t\t\t"
+$valgrind $pipex_dir/$pipex_name in_files/in_ok "/usr/bin/cat -e" "ls" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
 cmd_1_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/cat" | cut -d' ' -f 1)
 cmd_2_id=$(<test_log/valgrind_test${test_nb}_log grep -m2 "Command: /usr/bin/ls" | cut -d' ' -f 1)
@@ -397,8 +407,8 @@ diff=$(diff out_files/out_ok out_files/out_ok_test)
 [[ $leak -ne 0 ]] || [[ $open -ne 0 ]] && vg_ko_log+="Test${test_nb}: check test_log/valgrind_test${test_nb}_log for more info\n"
 
 test_nb=$(echo "$test_nb + 1" | bc)
-echo -ne "-> Test ${test_nb}:\t./pipex in_files/in_ok \"cat -e\" \"/usr/bin/ls\" out_files/out_ok\t\t\t"
-$valgrind $pipex_dir/pipex in_files/in_ok "cat -e" "/usr/bin/ls" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
+echo -ne "-> Test ${test_nb}:\t./${pipex_name} in_files/in_ok \"cat -e\" \"/usr/bin/ls\" out_files/out_ok\t\t\t"
+$valgrind $pipex_dir/$pipex_name in_files/in_ok "cat -e" "/usr/bin/ls" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
 cmd_1_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/cat" | cut -d' ' -f 1)
 cmd_2_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/ls" | cut -d' ' -f 1)
@@ -425,8 +435,8 @@ diff=$(diff out_files/out_ok out_files/out_ok_test)
 [[ $leak -ne 0 ]] || [[ $open -ne 0 ]] && vg_ko_log+="Test${test_nb}: check test_log/valgrind_test${test_nb}_log for more info\n"
 
 test_nb=$(echo "$test_nb + 1" | bc)
-echo -ne "-> Test ${test_nb}:\t./pipex in_files/in_ok \"/usr/bin/cat -e\" \"/usr/bin/ls\" out_files/out_ok\t\t"
-$valgrind $pipex_dir/pipex in_files/in_ok "/usr/bin/cat -e" "/usr/bin/ls" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
+echo -ne "-> Test ${test_nb}:\t./${pipex_name} in_files/in_ok \"/usr/bin/cat -e\" \"/usr/bin/ls\" out_files/out_ok\t\t"
+$valgrind $pipex_dir/$pipex_name in_files/in_ok "/usr/bin/cat -e" "/usr/bin/ls" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
 cmd_1_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/cat" | cut -d' ' -f 1)
 cmd_2_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/ls" | cut -d' ' -f 1)
@@ -455,8 +465,8 @@ diff=$(diff out_files/out_ok out_files/out_ok_test)
 echo -e "\n\nNon existing files/directories"
 
 test_nb=$(echo "$test_nb + 1" | bc)
-echo -ne "-> Test ${test_nb}:\t./pipex in_files/in_noexist \"cat\" \"cat\" out_files/out_ok\t\t\t"
-$valgrind $pipex_dir/pipex in_files/in_noexist "cat" "cat" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
+echo -ne "-> Test ${test_nb}:\t./${pipex_name} in_files/in_noexist \"cat\" \"cat\" out_files/out_ok\t\t\t"
+$valgrind $pipex_dir/$pipex_name in_files/in_noexist "cat" "cat" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
 cmd_1_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/cat" | cut -d' ' -f 1)
 cmd_2_id=$(<test_log/valgrind_test${test_nb}_log grep -m2 "Command: /usr/bin/cat" | cut -d' ' -f 1)
@@ -480,8 +490,8 @@ diff=$(diff out_files/out_ok out_files/out_ok_test)
 [[ $leak -ne 0 ]] || [[ $open -ne 0 ]] && vg_ko_log+="Test${test_nb}: check test_log/valgrind_test${test_nb}_log for more info\n"
 
 test_nb=$(echo "$test_nb + 1" | bc)
-echo -ne "-> Test ${test_nb}:\t./pipex /bin/in_noexist \"cat\" \"cat\" out_files/out_ok\t\t\t\t"
-$valgrind $pipex_dir/pipex /bin/in_noexist "cat" "cat" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
+echo -ne "-> Test ${test_nb}:\t./${pipex_name} /bin/in_noexist \"cat\" \"cat\" out_files/out_ok\t\t\t\t"
+$valgrind $pipex_dir/$pipex_name /bin/in_noexist "cat" "cat" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
 cmd_1_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/cat" | cut -d' ' -f 1)
 cmd_2_id=$(<test_log/valgrind_test${test_nb}_log grep -m2 "Command: /usr/bin/cat" | cut -d' ' -f 1)
@@ -505,8 +515,8 @@ diff=$(diff out_files/out_ok out_files/out_ok_test)
 [[ $leak -ne 0 ]] || [[ $open -ne 0 ]] && vg_ko_log+="Test${test_nb}: check test_log/valgrind_test${test_nb}_log for more info\n"
 
 test_nb=$(echo "$test_nb + 1" | bc)
-echo -ne "-> Test ${test_nb}:\t./pipex in_noexist/in_ok \"cat\" \"cat\" out_files/out_ok\t\t\t\t"
-$valgrind $pipex_dir/pipex in_noexist/in_ok "cat" "cat" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
+echo -ne "-> Test ${test_nb}:\t./${pipex_name} in_noexist/in_ok \"cat\" \"cat\" out_files/out_ok\t\t\t\t"
+$valgrind $pipex_dir/$pipex_name in_noexist/in_ok "cat" "cat" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
 cmd_1_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/cat" | cut -d' ' -f 1)
 cmd_2_id=$(<test_log/valgrind_test${test_nb}_log grep -m2 "Command: /usr/bin/cat" | cut -d' ' -f 1)
@@ -530,8 +540,8 @@ diff=$(diff out_files/out_ok out_files/out_ok_test)
 [[ $leak -ne 0 ]] || [[ $open -ne 0 ]] && vg_ko_log+="Test${test_nb}: check test_log/valgrind_test${test_nb}_log for more info\n"
 
 test_nb=$(echo "$test_nb + 1" | bc)
-echo -ne "-> Test ${test_nb}:\t./pipex in_files/in_ok \"cat\" \"cat\" out_noexist/out_ok\t\t\t\t"
-$valgrind $pipex_dir/pipex in_files/in_ok "cat" "cat" out_noexist/out_ok 2> test_log/valgrind_test${test_nb}_log
+echo -ne "-> Test ${test_nb}:\t./${pipex_name} in_files/in_ok \"cat\" \"cat\" out_noexist/out_ok\t\t\t\t"
+$valgrind $pipex_dir/$pipex_name in_files/in_ok "cat" "cat" out_noexist/out_ok 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
 cmd_1_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/cat" | cut -d' ' -f 1)
 leak_first=$(<test_log/valgrind_test${test_nb}_log grep "$cmd_1_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
@@ -554,8 +564,8 @@ diff=$(diff out_files/out_ok out_files/out_ok_test)
 echo -e "\n\nNon existing commands"
 
 test_nb=$(echo "$test_nb + 1" | bc)
-echo -ne "-> Test ${test_nb}:\t./pipex in_files/in_ok \"cata\" \"cat\" out_files/out_ok\t\t\t\t"
-$valgrind $pipex_dir/pipex in_files/in_ok "cata" "cat" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
+echo -ne "-> Test ${test_nb}:\t./${pipex_name} in_files/in_ok \"cata\" \"cat\" out_files/out_ok\t\t\t\t"
+$valgrind $pipex_dir/$pipex_name in_files/in_ok "cata" "cat" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
 cmd_2_id=$(<test_log/valgrind_test${test_nb}_log grep -m2 "Command: /usr/bin/cat" | cut -d' ' -f 1)
 leak_second=$(<test_log/valgrind_test${test_nb}_log grep "$cmd_2_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
@@ -577,8 +587,8 @@ diff=$(diff out_files/out_ok out_files/out_ok_test)
 [[ $leak -ne 0 ]] || [[ $open -ne 0 ]] && vg_ko_log+="Test${test_nb}: check test_log/valgrind_test${test_nb}_log for more info\n"
 
 test_nb=$(echo "$test_nb + 1" | bc)
-echo -ne "-> Test ${test_nb}:\t./pipex in_files/in_ok \"cat\" \"cata\" out_files/out_ok\t\t\t\t"
-$valgrind $pipex_dir/pipex in_files/in_ok "cat" "cata" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
+echo -ne "-> Test ${test_nb}:\t./${pipex_name} in_files/in_ok \"cat\" \"cata\" out_files/out_ok\t\t\t\t"
+$valgrind $pipex_dir/$pipex_name in_files/in_ok "cat" "cata" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
 cmd_1_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/cat" | cut -d' ' -f 1)
 leak_first=$(<test_log/valgrind_test${test_nb}_log grep "$cmd_1_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
@@ -600,8 +610,8 @@ diff=$(diff out_files/out_ok out_files/out_ok_test)
 [[ $leak -ne 0 ]] || [[ $open -ne 0 ]] && vg_ko_log+="Test${test_nb}: check test_log/valgrind_test${test_nb}_log for more info\n"
 
 test_nb=$(echo "$test_nb + 1" | bc)
-echo -ne "-> Test ${test_nb}:\t./pipex in_files/in_ok \"cata\" \"cata\" out_files/out_ok\t\t\t\t"
-$valgrind $pipex_dir/pipex in_files/in_ok "cata" "cata" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
+echo -ne "-> Test ${test_nb}:\t./${pipex_name} in_files/in_ok \"cata\" \"cata\" out_files/out_ok\t\t\t\t"
+$valgrind $pipex_dir/$pipex_name in_files/in_ok "cata" "cata" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
 leak_main=$(<test_log/valgrind_test${test_nb}_log grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g" | sed "{:q;N;s/\n/\+/g;t q}")
 leak=$(echo "$leak_main" | bc)
@@ -621,8 +631,8 @@ diff=$(diff out_files/out_ok out_files/out_ok_test)
 [[ $leak -ne 0 ]] || [[ $open -ne 0 ]] && vg_ko_log+="Test${test_nb}: check test_log/valgrind_test${test_nb}_log for more info\n"
 
 test_nb=$(echo "$test_nb + 1" | bc)
-echo -ne "-> Test ${test_nb}:\t./pipex in_files/in_ok \"/usr/bin/cata\" \"/usr/bin/cata\" out_files/out_ok\t\t"
-$valgrind $pipex_dir/pipex in_files/in_ok "/usr/bin/cata" "/usr/bin/cata" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
+echo -ne "-> Test ${test_nb}:\t./${pipex_name} in_files/in_ok \"/usr/bin/cata\" \"/usr/bin/cata\" out_files/out_ok\t\t"
+$valgrind $pipex_dir/$pipex_name in_files/in_ok "/usr/bin/cata" "/usr/bin/cata" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
 leak_main=$(<test_log/valgrind_test${test_nb}_log grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g" | sed "{:q;N;s/\n/\+/g;t q}")
 leak=$(echo "$leak_main" | bc)
@@ -646,8 +656,8 @@ diff=$(diff out_files/out_ok out_files/out_ok_test)
 echo -e "\n\nCustom commands"
 
 test_nb=$(echo "$test_nb + 1" | bc)
-echo -ne "-> Test ${test_nb}:\t./pipex in_files/in_ok \"my_cmd/exe\" \"cat\" out_files/out_ok\t\t\t"
-$valgrind $pipex_dir/pipex in_files/in_ok "my_cmd/exe" "cat" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
+echo -ne "-> Test ${test_nb}:\t./${pipex_name} in_files/in_ok \"my_cmd/exe\" \"cat\" out_files/out_ok\t\t\t"
+$valgrind $pipex_dir/$pipex_name in_files/in_ok "my_cmd/exe" "cat" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
 cmd_1_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: my_cmd/exe" | cut -d' ' -f 1)
 cmd_2_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/cat" | cut -d' ' -f 1)
@@ -674,8 +684,8 @@ diff=$(diff out_files/out_ok out_files/out_ok_test)
 [[ $leak -ne 0 ]] || [[ $open -ne 0 ]] && vg_ko_log+="Test${test_nb}: check test_log/valgrind_test${test_nb}_log for more info\n"
 
 test_nb=$(echo "$test_nb + 1" | bc)
-echo -ne "-> Test ${test_nb}:\t./pipex in_files/in_ok \"cat\" \"my_cmd/exe\" out_files/out_ok\t\t\t"
-$valgrind $pipex_dir/pipex in_files/in_ok "cat" "my_cmd/exe" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
+echo -ne "-> Test ${test_nb}:\t./${pipex_name} in_files/in_ok \"cat\" \"my_cmd/exe\" out_files/out_ok\t\t\t"
+$valgrind $pipex_dir/$pipex_name in_files/in_ok "cat" "my_cmd/exe" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
 cmd_1_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/cat" | cut -d' ' -f 1)
 cmd_2_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: my_cmd/exe" | cut -d' ' -f 1)
@@ -702,8 +712,8 @@ diff=$(diff out_files/out_ok out_files/out_ok_test)
 [[ $leak -ne 0 ]] || [[ $open -ne 0 ]] && vg_ko_log+="Test${test_nb}: check test_log/valgrind_test${test_nb}_log for more info\n"
 
 test_nb=$(echo "$test_nb + 1" | bc)
-echo -ne "-> Test ${test_nb}:\t./pipex in_files/in_ok \"my_cmd/exe\" \"my_cmd2/exe\" out_files/out_ok\t\t"
-$valgrind $pipex_dir/pipex in_files/in_ok "my_cmd/exe" "my_cmd2/exe" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
+echo -ne "-> Test ${test_nb}:\t./${pipex_name} in_files/in_ok \"my_cmd/exe\" \"my_cmd2/exe\" out_files/out_ok\t\t"
+$valgrind $pipex_dir/$pipex_name in_files/in_ok "my_cmd/exe" "my_cmd2/exe" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
 cmd_1_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: my_cmd/exe" | cut -d' ' -f 1)
 cmd_2_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: my_cmd2/exe" | cut -d' ' -f 1)
@@ -730,8 +740,8 @@ diff=$(diff out_files/out_ok out_files/out_ok_test)
 [[ $leak -ne 0 ]] || [[ $open -ne 0 ]] && vg_ko_log+="Test${test_nb}: check test_log/valgrind_test${test_nb}_log for more info\n"
 
 test_nb=$(echo "$test_nb + 1" | bc)
-echo -ne "-> Test ${test_nb}:\t./pipex in_files/in_ok \"cat\" \"my_cmd/yo\" out_files/out_ok\t\t\t"
-$valgrind $pipex_dir/pipex in_files/in_ok "cat" "my_cmd/yo" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
+echo -ne "-> Test ${test_nb}:\t./${pipex_name} in_files/in_ok \"cat\" \"my_cmd/yo\" out_files/out_ok\t\t\t"
+$valgrind $pipex_dir/$pipex_name in_files/in_ok "cat" "my_cmd/yo" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
 cmd_1_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/cat" | cut -d' ' -f 1)
 cmd_2_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: my_cmd/yo" | cut -d' ' -f 1)
@@ -760,8 +770,8 @@ diff=$(diff out_files/out_ok out_files/out_ok_test)
 echo -e "\n\nNon exe commands"
 
 test_nb=$(echo "$test_nb + 1" | bc)
-echo -ne "-> Test ${test_nb}:\t./pipex in_files/in_ok \"my_cmd/no_exe\" \"cat\" out_files/out_ok\t\t\t"
-$valgrind $pipex_dir/pipex in_files/in_ok "my_cmd/no_exe" "cat" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
+echo -ne "-> Test ${test_nb}:\t./${pipex_name} in_files/in_ok \"my_cmd/no_exe\" \"cat\" out_files/out_ok\t\t\t"
+$valgrind $pipex_dir/$pipex_name in_files/in_ok "my_cmd/no_exe" "cat" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
 cmd_2_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/cat" | cut -d' ' -f 1)
 leak_second=$(<test_log/valgrind_test${test_nb}_log grep "$cmd_2_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
@@ -783,8 +793,8 @@ diff=$(diff out_files/out_ok out_files/out_ok_test)
 [[ $leak -ne 0 ]] || [[ $open -ne 0 ]] && vg_ko_log+="Test${test_nb}: check test_log/valgrind_test${test_nb}_log for more info\n"
 
 test_nb=$(echo "$test_nb + 1" | bc)
-echo -ne "-> Test ${test_nb}:\t./pipex in_files/in_ok \"cat\" \"my_cmd/no_exe\" out_files/out_ok\t\t\t"
-$valgrind $pipex_dir/pipex in_files/in_ok "cat" "my_cmd/no_exe" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
+echo -ne "-> Test ${test_nb}:\t./${pipex_name} in_files/in_ok \"cat\" \"my_cmd/no_exe\" out_files/out_ok\t\t\t"
+$valgrind $pipex_dir/$pipex_name in_files/in_ok "cat" "my_cmd/no_exe" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
 cmd_1_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/cat" | cut -d' ' -f 1)
 leak_first=$(<test_log/valgrind_test${test_nb}_log grep "$cmd_1_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
@@ -808,8 +818,8 @@ diff=$(diff out_files/out_ok out_files/out_ok_test)
 echo -e "\n\nPermission errors"
 
 test_nb=$(echo "$test_nb + 1" | bc)
-echo -ne "-> Test ${test_nb}:\t./pipex in_files/in_noread \"cat\" \"cat\" out_files/out_ok\t\t\t\t"
-$valgrind $pipex_dir/pipex in_files/in_noread "cat" "cat" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
+echo -ne "-> Test ${test_nb}:\t./${pipex_name} in_files/in_noread \"cat\" \"cat\" out_files/out_ok\t\t\t\t"
+$valgrind $pipex_dir/$pipex_name in_files/in_noread "cat" "cat" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
 cmd_1_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/cat" | cut -d' ' -f 1)
 cmd_2_id=$(<test_log/valgrind_test${test_nb}_log grep -m2 "Command: /usr/bin/cat" | cut -d' ' -f 1)
@@ -833,8 +843,8 @@ diff=$(diff out_files/out_ok out_files/out_ok_test)
 [[ $leak -ne 0 ]] || [[ $open -ne 0 ]] && vg_ko_log+="Test${test_nb}: check test_log/valgrind_test${test_nb}_log for more info\n"
 
 test_nb=$(echo "$test_nb + 1" | bc)
-echo -ne "-> Test ${test_nb}:\t./pipex in_files/in_noperm \"cat\" \"cat\" out_files/out_ok\t\t\t\t"
-$valgrind $pipex_dir/pipex in_files/in_noperm "cat" "cat" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
+echo -ne "-> Test ${test_nb}:\t./${pipex_name} in_files/in_noperm \"cat\" \"cat\" out_files/out_ok\t\t\t\t"
+$valgrind $pipex_dir/$pipex_name in_files/in_noperm "cat" "cat" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
 cmd_1_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/cat" | cut -d' ' -f 1)
 cmd_2_id=$(<test_log/valgrind_test${test_nb}_log grep -m2 "Command: /usr/bin/cat" | cut -d' ' -f 1)
@@ -858,8 +868,8 @@ diff=$(diff out_files/out_ok out_files/out_ok_test)
 [[ $leak -ne 0 ]] || [[ $open -ne 0 ]] && vg_ko_log+="Test${test_nb}: check test_log/valgrind_test${test_nb}_log for more info\n"
 
 test_nb=$(echo "$test_nb + 1" | bc)
-echo -ne "-> Test ${test_nb}:\t./pipex in_files/in_ok \"cat\" \"cat\" out_files/out_nowrite\t\t\t"
-$valgrind $pipex_dir/pipex in_files/in_ok "cat" "cat" out_files/out_nowrite 2> test_log/valgrind_test${test_nb}_log
+echo -ne "-> Test ${test_nb}:\t./${pipex_name} in_files/in_ok \"cat\" \"cat\" out_files/out_nowrite\t\t\t"
+$valgrind $pipex_dir/$pipex_name in_files/in_ok "cat" "cat" out_files/out_nowrite 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
 cmd_1_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/cat" | cut -d' ' -f 1)
 leak_first=$(<test_log/valgrind_test${test_nb}_log grep "$cmd_1_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
@@ -881,8 +891,8 @@ diff=$(diff out_files/out_ok out_files/out_ok_test)
 [[ $leak -ne 0 ]] || [[ $open -ne 0 ]] && vg_ko_log+="Test${test_nb}: check test_log/valgrind_test${test_nb}_log for more info\n"
 
 test_nb=$(echo "$test_nb + 1" | bc)
-echo -ne "-> Test ${test_nb}:\t./pipex in_files/in_ok \"cat\" \"cat\" out_files/out_noperm\t\t\t\t"
-$valgrind $pipex_dir/pipex in_files/in_ok "cat" "cat" out_files/out_noperm 2> test_log/valgrind_test${test_nb}_log
+echo -ne "-> Test ${test_nb}:\t./${pipex_name} in_files/in_ok \"cat\" \"cat\" out_files/out_noperm\t\t\t\t"
+$valgrind $pipex_dir/$pipex_name in_files/in_ok "cat" "cat" out_files/out_noperm 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
 cmd_1_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/cat" | cut -d' ' -f 1)
 leak_first=$(<test_log/valgrind_test${test_nb}_log grep "$cmd_1_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
@@ -904,8 +914,8 @@ diff=$(diff out_files/out_ok out_files/out_ok_test)
 [[ $leak -ne 0 ]] || [[ $open -ne 0 ]] && vg_ko_log+="Test${test_nb}: check test_log/valgrind_test${test_nb}_log for more info\n"
 
 test_nb=$(echo "$test_nb + 1" | bc)
-echo -ne "-> Test ${test_nb}:\t./pipex in_files/in_ok \"cat\" \"cat\" out_noperm/out_ok\t\t\t\t"
-$valgrind $pipex_dir/pipex in_files/in_ok "cat" "cat" out_noperm/out_ok 2> test_log/valgrind_test${test_nb}_log
+echo -ne "-> Test ${test_nb}:\t./${pipex_name} in_files/in_ok \"cat\" \"cat\" out_noperm/out_ok\t\t\t\t"
+$valgrind $pipex_dir/$pipex_name in_files/in_ok "cat" "cat" out_noperm/out_ok 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
 cmd_1_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/cat" | cut -d' ' -f 1)
 leak_first=$(<test_log/valgrind_test${test_nb}_log grep "$cmd_1_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
@@ -927,8 +937,8 @@ diff=$(diff out_files/out_ok out_files/out_ok_test)
 [[ $leak -ne 0 ]] || [[ $open -ne 0 ]] && vg_ko_log+="Test${test_nb}: check test_log/valgrind_test${test_nb}_log for more info\n"
 
 test_nb=$(echo "$test_nb + 1" | bc)
-echo -ne "-> Test ${test_nb}:\t./pipex in_files/in_ok \"my_cmd/exe_noperm\" \"cat\" out_files/out_ok\t\t"
-$valgrind $pipex_dir/pipex in_files/in_ok "my_cmd/exe_noperm" "cat" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
+echo -ne "-> Test ${test_nb}:\t./${pipex_name} in_files/in_ok \"my_cmd/exe_noperm\" \"cat\" out_files/out_ok\t\t"
+$valgrind $pipex_dir/$pipex_name in_files/in_ok "my_cmd/exe_noperm" "cat" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
 cmd_2_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/cat" | cut -d' ' -f 1)
 leak_second=$(<test_log/valgrind_test${test_nb}_log grep "$cmd_2_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
@@ -950,8 +960,8 @@ diff=$(diff out_files/out_ok out_files/out_ok_test)
 [[ $leak -ne 0 ]] || [[ $open -ne 0 ]] && vg_ko_log+="Test${test_nb}: check test_log/valgrind_test${test_nb}_log for more info\n"
 
 test_nb=$(echo "$test_nb + 1" | bc)
-echo -ne "-> Test ${test_nb}:\t./pipex in_files/in_ok \"cat\" \"my_cmd/exe_noperm\" out_files/out_ok\t\t"
-$valgrind $pipex_dir/pipex in_files/in_ok "cat" "my_cmd/exe_noperm" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
+echo -ne "-> Test ${test_nb}:\t./${pipex_name} in_files/in_ok \"cat\" \"my_cmd/exe_noperm\" out_files/out_ok\t\t"
+$valgrind $pipex_dir/$pipex_name in_files/in_ok "cat" "my_cmd/exe_noperm" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
 cmd_1_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/cat" | cut -d' ' -f 1)
 leak_first=$(<test_log/valgrind_test${test_nb}_log grep "$cmd_1_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
@@ -973,8 +983,8 @@ diff=$(diff out_files/out_ok out_files/out_ok_test)
 [[ $leak -ne 0 ]] || [[ $open -ne 0 ]] && vg_ko_log+="Test${test_nb}: check test_log/valgrind_test${test_nb}_log for more info\n"
 
 test_nb=$(echo "$test_nb + 1" | bc)
-echo -ne "-> Test ${test_nb}:\t./pipex in_files/in_ok \"cat\" \"my_cmd/yo_noperm\" out_files/out_ok\t\t"
-$valgrind $pipex_dir/pipex in_files/in_ok "cat" "my_cmd/yo_noperm" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
+echo -ne "-> Test ${test_nb}:\t./${pipex_name} in_files/in_ok \"cat\" \"my_cmd/yo_noperm\" out_files/out_ok\t\t"
+$valgrind $pipex_dir/$pipex_name in_files/in_ok "cat" "my_cmd/yo_noperm" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
 cmd_1_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/cat" | cut -d' ' -f 1)
 leak_first=$(<test_log/valgrind_test${test_nb}_log grep "$cmd_1_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
@@ -998,8 +1008,8 @@ diff=$(diff out_files/out_ok out_files/out_ok_test)
 echo -e "\n\nInvalid command args"
 
 test_nb=$(echo "$test_nb + 1" | bc)
-echo -ne "-> Test ${test_nb}:\t./pipex in_files/in_ok \"ls dir_noexist\" \"ls\" out_files/out_ok\t\t\t"
-$valgrind $pipex_dir/pipex in_files/in_ok "ls dir_noexist" "ls" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
+echo -ne "-> Test ${test_nb}:\t./${pipex_name} in_files/in_ok \"ls dir_noexist\" \"ls\" out_files/out_ok\t\t\t"
+$valgrind $pipex_dir/$pipex_name in_files/in_ok "ls dir_noexist" "ls" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
 cmd_1_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/ls" | cut -d' ' -f 1)
 cmd_2_id=$(<test_log/valgrind_test${test_nb}_log grep -m2 "Command: /usr/bin/ls" | tail -1 | cut -d' ' -f 1)
@@ -1023,11 +1033,11 @@ diff=$(diff out_files/out_ok out_files/out_ok_test)
 [[ $leak -ne 0 ]] || [[ $open -ne 0 ]] && vg_ko_log+="Test${test_nb}: check test_log/valgrind_test${test_nb}_log for more info\n"
 
 test_nb=$(echo "$test_nb + 1" | bc)
-echo -ne "-> Test ${test_nb}:\t./pipex in_files/in_ok \"cat\" \"ls dir_noexist\" out_files/out_ok\t\t\t"
-$valgrind $pipex_dir/pipex in_files/in_ok "cat" "ls dir_noexist" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
+echo -ne "-> Test ${test_nb}:\t./${pipex_name} in_files/in_ok \"cat\" \"ls dir_noexist\" out_files/out_ok\t\t\t"
+$valgrind $pipex_dir/$pipex_name in_files/in_ok "cat" "ls dir_noexist" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
 cmd_1_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/cat" | cut -d' ' -f 1)
-cmd_2_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/ls dir_noexist" | cut -d' ' -f 1)
+cmd_2_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/ls" | cut -d' ' -f 1)
 leak_first=$(<test_log/valgrind_test${test_nb}_log grep "$cmd_1_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
 leak_second=$(<test_log/valgrind_test${test_nb}_log grep "$cmd_2_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
 leak_main=$(<test_log/valgrind_test${test_nb}_log egrep -v "$cmd_1_id|$cmd_2_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g" | sed "{:q;N;s/\n/\+/g;t q}")
@@ -1048,8 +1058,8 @@ diff=$(diff out_files/out_ok out_files/out_ok_test)
 [[ $leak -ne 0 ]] || [[ $open -ne 0 ]] && vg_ko_log+="Test${test_nb}: check test_log/valgrind_test${test_nb}_log for more info\n"
 
 test_nb=$(echo "$test_nb + 1" | bc)
-echo -ne "-> Test ${test_nb}:\t./pipex in_files/in_ok \"ls out_noperm\" \"ls\" out_files/out_ok\t\t\t"
-$valgrind $pipex_dir/pipex in_files/in_ok "ls out_noperm" "ls" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
+echo -ne "-> Test ${test_nb}:\t./${pipex_name} in_files/in_ok \"ls out_noperm\" \"ls\" out_files/out_ok\t\t\t"
+$valgrind $pipex_dir/$pipex_name in_files/in_ok "ls out_noperm" "ls" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
 cmd_1_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/ls" | cut -d' ' -f 1)
 cmd_2_id=$(<test_log/valgrind_test${test_nb}_log grep -m2 "Command: /usr/bin/ls" | tail -1 | cut -d' ' -f 1)
@@ -1073,11 +1083,11 @@ diff=$(diff out_files/out_ok out_files/out_ok_test)
 [[ $leak -ne 0 ]] || [[ $open -ne 0 ]] && vg_ko_log+="Test${test_nb}: check test_log/valgrind_test${test_nb}_log for more info\n"
 
 test_nb=$(echo "$test_nb + 1" | bc)
-echo -ne "-> Test ${test_nb}:\t./pipex in_files/in_ok \"cat\" \"ls out_noperm\" out_files/out_ok\t\t\t"
-$valgrind $pipex_dir/pipex in_files/in_ok "cat" "ls out_noperm" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
+echo -ne "-> Test ${test_nb}:\t./${pipex_name} in_files/in_ok \"cat\" \"ls out_noperm\" out_files/out_ok\t\t\t"
+$valgrind $pipex_dir/$pipex_name in_files/in_ok "cat" "ls out_noperm" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
 cmd_1_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/cat" | cut -d' ' -f 1)
-cmd_2_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/ls out_noperm" | cut -d' ' -f 1)
+cmd_2_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/ls" | cut -d' ' -f 1)
 leak_first=$(<test_log/valgrind_test${test_nb}_log grep "$cmd_1_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
 leak_second=$(<test_log/valgrind_test${test_nb}_log grep "$cmd_2_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
 leak_main=$(<test_log/valgrind_test${test_nb}_log egrep -v "$cmd_1_id|$cmd_2_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g" | sed "{:q;N;s/\n/\+/g;t q}")
@@ -1101,8 +1111,8 @@ diff=$(diff out_files/out_ok out_files/out_ok_test)
 echo -e "\n\nEmpty environment"
 
 test_nb=$(echo "$test_nb + 1" | bc)
-echo -ne "-> Test ${test_nb}:\tenv -i ./pipex in_files/in_ok \"cat\" \"ls\" out_files/out_ok\t\t\t"
-$valgrind env -i $pipex_dir/pipex in_files/in_ok "cat" "ls" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
+echo -ne "-> Test ${test_nb}:\tenv -i ./${pipex_name} in_files/in_ok \"cat\" \"ls\" out_files/out_ok\t\t\t"
+$valgrind env -i $pipex_dir/$pipex_name in_files/in_ok "cat" "ls" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
 leak_main=$(<test_log/valgrind_test${test_nb}_log grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g" | sed "{:q;N;s/\n/\+/g;t q}")
 leak=$(echo "$leak_main" | bc)
@@ -1129,8 +1139,8 @@ diff=$(diff out_files/out_ok out_files/out_ok_test)
 [[ $leak -ne 0 ]] || [[ $open -ne 0 ]] && vg_ko_log+="Test${test_nb}: check test_log/valgrind_test${test_nb}_log for more info\n"
 
 test_nb=$(echo "$test_nb + 1" | bc)
-echo -ne "-> Test ${test_nb}:\tenv -i ./pipex in_files/in_ok \"/usr/bin/cat\" \"ls\" out_files/out_ok\t\t"
-$valgrind env -i $pipex_dir/pipex in_files/in_ok "/usr/bin/cat" "ls" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
+echo -ne "-> Test ${test_nb}:\tenv -i ./${pipex_name} in_files/in_ok \"/usr/bin/cat\" \"ls\" out_files/out_ok\t\t"
+$valgrind env -i $pipex_dir/$pipex_name in_files/in_ok "/usr/bin/cat" "ls" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
 cmd_1_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/cat" | cut -d' ' -f 1)
 leak_first=$(<test_log/valgrind_test${test_nb}_log grep "$cmd_1_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
@@ -1158,8 +1168,8 @@ diff=$(diff out_files/out_ok out_files/out_ok_test)
 [[ $leak -ne 0 ]] || [[ $open -ne 0 ]] && vg_ko_log+="Test${test_nb}: check test_log/valgrind_test${test_nb}_log for more info\n"
 
 test_nb=$(echo "$test_nb + 1" | bc)
-echo -ne "-> Test ${test_nb}:\tenv -i ./pipex in_files/in_ok \"cat\" \"/usr/bin/ls\" out_files/out_ok\t\t"
-$valgrind env -i $pipex_dir/pipex in_files/in_ok "cat" "/usr/bin/ls" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
+echo -ne "-> Test ${test_nb}:\tenv -i ./${pipex_name} in_files/in_ok \"cat\" \"/usr/bin/ls\" out_files/out_ok\t\t"
+$valgrind env -i $pipex_dir/$pipex_name in_files/in_ok "cat" "/usr/bin/ls" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
 cmd_1_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/ls" | cut -d' ' -f 1)
 leak_first=$(<test_log/valgrind_test${test_nb}_log grep "$cmd_1_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
@@ -1187,8 +1197,8 @@ diff=$(diff out_files/out_ok out_files/out_ok_test)
 [[ $leak -ne 0 ]] || [[ $open -ne 0 ]] && vg_ko_log+="Test${test_nb}: check test_log/valgrind_test${test_nb}_log for more info\n"
 
 test_nb=$(echo "$test_nb + 1" | bc)
-echo -ne "-> Test ${test_nb}:\tenv -i ./pipex in_files/in_ok \"/usr/bin/cat\" \"/usr/bin/ls\" out_files/out_ok\t"
-$valgrind env -i $pipex_dir/pipex in_files/in_ok "/usr/bin/cat" "/usr/bin/ls" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
+echo -ne "-> Test ${test_nb}:\tenv -i ./${pipex_name} in_files/in_ok \"/usr/bin/cat\" \"/usr/bin/ls\" out_files/out_ok\t"
+$valgrind env -i $pipex_dir/$pipex_name in_files/in_ok "/usr/bin/cat" "/usr/bin/ls" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
 cmd_1_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/cat" | cut -d' ' -f 1)
 cmd_2_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/ls" | cut -d' ' -f 1)
@@ -1220,8 +1230,8 @@ diff=$(diff out_files/out_ok out_files/out_ok_test)
 echo -e "\n\nSingle quote parsing"
 
 test_nb=$(echo "$test_nb + 1" | bc)
-echo -ne "-> Test ${test_nb}:\t./pipex in_files/in_ok \"cat\" \"grep 'blah blah'\" out_files/out_ok\t\t"
-$valgrind $pipex_dir/pipex in_files/in_ok "cat" "grep 'blah blah'" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
+echo -ne "-> Test ${test_nb}:\t./${pipex_name} in_files/in_ok \"cat\" \"grep 'blah blah'\" out_files/out_ok\t\t"
+$valgrind $pipex_dir/$pipex_name in_files/in_ok "cat" "grep 'blah blah'" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
 cmd_1_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/cat" | cut -d' ' -f 1)
 cmd_2_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/grep" | cut -d' ' -f 1)
@@ -1248,8 +1258,8 @@ diff=$(diff out_files/out_ok out_files/out_ok_test)
 [[ $leak -ne 0 ]] || [[ $open -ne 0 ]] && vg_ko_log+="Test${test_nb}: check test_log/valgrind_test${test_nb}_log for more info\n"
 
 test_nb=$(echo "$test_nb + 1" | bc)
-echo -ne "-> Test ${test_nb}:\t./pipex in_files/in_ok \"cat\" \"grep 'blah'' blah'\" out_files/out_ok\t\t"
-$valgrind $pipex_dir/pipex in_files/in_ok "cat" "grep 'blah'' blah'" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
+echo -ne "-> Test ${test_nb}:\t./${pipex_name} in_files/in_ok \"cat\" \"grep 'blah'' blah'\" out_files/out_ok\t\t"
+$valgrind $pipex_dir/$pipex_name in_files/in_ok "cat" "grep 'blah'' blah'" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
 cmd_1_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/cat" | cut -d' ' -f 1)
 cmd_2_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/grep" | cut -d' ' -f 1)
@@ -1276,8 +1286,8 @@ diff=$(diff out_files/out_ok out_files/out_ok_test)
 [[ $leak -ne 0 ]] || [[ $open -ne 0 ]] && vg_ko_log+="Test${test_nb}: check test_log/valgrind_test${test_nb}_log for more info\n"
 
 test_nb=$(echo "$test_nb + 1" | bc)
-echo -ne "-> Test ${test_nb}:\t./pipex in_files/in_ok \"cat\" \"grep 'blah blah'''\" out_files/out_ok\t\t"
-$valgrind $pipex_dir/pipex in_files/in_ok "cat" "grep 'blah blah'''" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
+echo -ne "-> Test ${test_nb}:\t./${pipex_name} in_files/in_ok \"cat\" \"grep 'blah blah'''\" out_files/out_ok\t\t"
+$valgrind $pipex_dir/$pipex_name in_files/in_ok "cat" "grep 'blah blah'''" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
 cmd_1_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/cat" | cut -d' ' -f 1)
 cmd_2_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/grep" | cut -d' ' -f 1)
@@ -1304,8 +1314,8 @@ diff=$(diff out_files/out_ok out_files/out_ok_test)
 [[ $leak -ne 0 ]] || [[ $open -ne 0 ]] && vg_ko_log+="Test${test_nb}: check test_log/valgrind_test${test_nb}_log for more info\n"
 
 test_nb=$(echo "$test_nb + 1" | bc)
-echo -ne "-> Test ${test_nb}:\t./pipex in_files/in_ok \"cat\" \"ls 'in_files' 'out_files'\" out_files/out_ok\t"
-$valgrind $pipex_dir/pipex in_files/in_ok "cat" "ls 'in_files' 'out_files'" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
+echo -ne "-> Test ${test_nb}:\t./${pipex_name} in_files/in_ok \"cat\" \"ls 'in_files' 'out_files'\" out_files/out_ok\t"
+$valgrind $pipex_dir/$pipex_name in_files/in_ok "cat" "ls 'in_files' 'out_files'" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
 cmd_1_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/cat" | cut -d' ' -f 1)
 cmd_2_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/ls" | cut -d' ' -f 1)
@@ -1332,8 +1342,8 @@ diff=$(diff out_files/out_ok out_files/out_ok_test)
 [[ $leak -ne 0 ]] || [[ $open -ne 0 ]] && vg_ko_log+="Test${test_nb}: check test_log/valgrind_test${test_nb}_log for more info\n"
 
 test_nb=$(echo "$test_nb + 1" | bc)
-echo -ne "-> Test ${test_nb}:\t./pipex in_files/in_ok \"cat\" \"cut -d'a' -f1\" out_files/out_ok\t\t\t"
-$valgrind $pipex_dir/pipex in_files/in_ok "cat" "cut -d'a' -f1" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
+echo -ne "-> Test ${test_nb}:\t./${pipex_name} in_files/in_ok \"cat\" \"cut -d'a' -f1\" out_files/out_ok\t\t\t"
+$valgrind $pipex_dir/$pipex_name in_files/in_ok "cat" "cut -d'a' -f1" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
 codepipex=$?
 cmd_1_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/cat" | cut -d' ' -f 1)
 cmd_2_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/cut" | cut -d' ' -f 1)
@@ -1347,6 +1357,46 @@ err_noperm=$(< test_log/valgrind_test${test_nb}_log grep -oi "permission denied"
 err_nocmd=$(< test_log/valgrind_test${test_nb}_log grep -oi "command not found" | wc -l)
 err=$(echo "$err_nofile + $err_noperm + $err_nocmd" | bc)
 2>/dev/null < in_files/in_ok cat | cut -d'a' -f1 > out_files/out_ok_test 2>/dev/null
+codetest=$?
+diff=$(diff out_files/out_ok out_files/out_ok_test)
+[[ $(echo -ne $diff | wc -l) -ne 0 ]] && $diff_log+="\nTest{test_nb}:\n${diff}"
+[[ $(echo -ne $diff | wc -l) -eq 0 ]] && echo -ne "${GREEN}OK${END}\t" || echo -ne "${RED}KO${END}\t"
+[[ $codepipex -eq $codetest ]] && echo -ne "${GREEN}OK${END}\t" || echo -ne "${RED}KO${END}\t"
+[[ $codepipex -ne $codetest ]] && err_log+="Test${test_nb}: User exit status=$codepipex - Test exit status=$codetest\n"
+[[ $err -eq 0 ]]  && echo -ne "${GREEN}OK${END}\t" || echo -ne "${RED}KO${END}\t"
+[[ $err -ne 0 ]] && out_err_log+=$(echo -e "Test${test_nb}:") && out_err_log+=$(< test_log/valgrind_test${test_nb}_log egrep "(no such file or directory|permission denied|command not found)")
+[[ $leak -eq 0 ]] && echo -ne "${GREEN}OK${END}\t" || echo -ne "${RED}KO${END}\t"
+[[ $open -eq 0 ]] && echo -e "${GREEN}OK${END}\t" || echo -e "${RED}KO${END}\t"
+[[ $leak -ne 0 ]] || [[ $open -ne 0 ]] && vg_ko_log+="Test${test_nb}: check test_log/valgrind_test${test_nb}_log for more info\n"
+
+[[ $bonus -eq 0 ]] && echo -e "\n${YEL}Out file errors:${END}\n$diff_log" && echo -ne $diff_log > test_log/diff_log
+[[ $bonus -eq 0 ]] && echo -e "${YEL}Exit code errors:${END}\n$err_log" && echo -ne $err_log > test_log/test_log
+[[ $bonus -eq 0 ]] && echo -e "${YEL}Error output errors:${END}\n$out_err_log" && echo -ne $out_err_log > test_log/test_out_log
+
+vg_error=$(echo -e $vg_ko_log | wc -l)
+[[ $bonus -eq 0 ]] && [[ $vg_error -gt 1 ]] && echo -ne "${YEL}Valgrind errors:${END}\n${vg_ko_log}"
+[[ $bonus -eq 0 ]] && exit
+
+echo -e "\n\nBonus: Multiple pipes"
+
+test_nb=$(echo "$test_nb + 1" | bc)
+echo -ne "-> Test ${test_nb}:\t./${bonus_name} in_files/in_ok \"cat\" \"grep blah\" \"wc -l\" out_files/out_ok\t\t"
+$valgrind $pipex_dir/$bonus_name in_files/in_ok "cat" "grep blah" "wc -l" out_files/out_ok 2> test_log/valgrind_test${test_nb}_log
+codepipex=$?
+cmd_1_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/cat" | cut -d' ' -f 1)
+cmd_2_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/grep" | cut -d' ' -f 1)
+cmd_3_id=$(<test_log/valgrind_test${test_nb}_log grep -m1 "Command: /usr/bin/wc" | cut -d' ' -f 1)
+leak_first=$(<test_log/valgrind_test${test_nb}_log grep "$cmd_1_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
+leak_second=$(<test_log/valgrind_test${test_nb}_log grep "$cmd_2_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
+leak_third=$(<test_log/valgrind_test${test_nb}_log grep "$cmd_3_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g")
+leak_main=$(<test_log/valgrind_test${test_nb}_log egrep -v "$cmd_1_id|$cmd_2_id|$cmd_3_id" | grep -A 1 "HEAP SUMMARY" | egrep -o "[0-9]*,?[0-9]+ bytes" | cut -d' ' -f1 | sed "s/,//g" | sed "{:q;N;s/\n/\+/g;t q}")
+leak=$(echo "$leak_main+$leak_first+$leak_third" | bc)
+open=$(<test_log/valgrind_test${test_nb}_log grep -c " file descriptor")
+err_nofile=$(< test_log/valgrind_test${test_nb}_log grep -oi "no such file or directory" | wc -l)
+err_noperm=$(< test_log/valgrind_test${test_nb}_log grep -oi "permission denied" | wc -l)
+err_nocmd=$(< test_log/valgrind_test${test_nb}_log grep -oi "command not found" | wc -l)
+err=$(echo "$err_nofile + $err_noperm + $err_nocmd" | bc)
+2>/dev/null < in_files/in_ok cat | grep blah | wc -l > out_files/out_ok_test 2>/dev/null
 codetest=$?
 diff=$(diff out_files/out_ok out_files/out_ok_test)
 [[ $(echo -ne $diff | wc -l) -ne 0 ]] && $diff_log+="\nTest{test_nb}:\n${diff}"
